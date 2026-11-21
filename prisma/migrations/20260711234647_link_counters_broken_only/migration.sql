@@ -1,0 +1,9 @@
+-- AlterTable
+ALTER TABLE "Page" ADD COLUMN     "linksBroken" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN     "linksChecked" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN     "linksInternalChecked" INTEGER NOT NULL DEFAULT 0;
+
+-- AlterTable
+ALTER TABLE "Scan" ADD COLUMN     "linksBroken" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN     "linksChecked" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN     "linksInternalChecked" INTEGER NOT NULL DEFAULT 0;

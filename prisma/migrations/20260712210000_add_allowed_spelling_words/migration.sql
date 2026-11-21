@@ -1,0 +1,1 @@
+ALTER TABLE "Site" ADD COLUMN "allowedSpellingWords" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[];

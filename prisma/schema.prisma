@@ -1,0 +1,391 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Site {
+  id                   String    @id @default(cuid())
+  name                 String
+  rootUrl              String
+  // crawl config
+  seedUrls             String[]  @default([])
+  includePatterns      String[]  @default([])
+  excludePatterns      String[]  @default([])
+  maxPages             Int       @default(1000)
+  concurrency          Int       @default(5)
+  checkExternalLinks   Boolean   @default(true)
+  spellcheckEnabled    Boolean   @default(false)
+  // Site-specific vocabulary accepted by the owner (brand names, product terms, jargon).
+  // Stored normalized to lowercase; findings remain immutable scan history.
+  allowedSpellingWords String[]  @default([])
+  // scheduling
+  scheduleCron         String? // null = manual only
+  scheduleTimezone     String    @default("UTC")
+  scheduleNextRunAt    DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  scans        Scan[]
+  alerts       Alert[]
+  tasks        Task[]
+  uptimeChecks UptimeCheck[] @ignore
+  itemChecks   ItemCheck[]
+}
+
+model Alert {
+  id        String     @id @default(cuid())
+  siteId    String
+  site      Site       @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  scanId    String?
+  level     AlertLevel
+  message   String
+  read      Boolean    @default(false)
+  createdAt DateTime   @default(now())
+
+  @@index([siteId, createdAt])
+  @@index([read, createdAt])
+  @@index([createdAt, id])
+  @@index([level, createdAt, id])
+}
+
+model Task {
+  id          String       @id @default(cuid())
+  siteId      String?
+  site        Site?        @relation(fields: [siteId], references: [id], onDelete: SetNull)
+  title       String
+  description String?
+  status      TaskStatus   @default(OPEN)
+  priority    TaskPriority @default(MEDIUM)
+  assigneeId  String?
+  assignee    TeamMember?  @relation(fields: [assigneeId], references: [id], onDelete: SetNull)
+  findingCode String? // stable rule id this task tracks, e.g. "seo.missing-title"
+  pageUrl     String?
+  dueAt       DateTime?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([status, dueAt])
+  @@index([siteId])
+  @@index([assigneeId])
+  @@index([createdAt, id])
+}
+
+// Legacy table retained for existing monitoring history.
+model UptimeCheck {
+  id             String   @id @default(cuid())
+  siteId         String
+  site           Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  ok             Boolean
+  httpStatus     Int?
+  responseTimeMs Int?
+  error          String?
+  checkedAt      DateTime @default(now())
+
+  @@index([siteId, checkedAt])
+  @@index([checkedAt])
+  @@ignore
+}
+
+model TeamMember {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  role      String   @default("Member") // Admin | Member | Viewer
+  createdAt DateTime @default(now())
+
+  tasks Task[]
+}
+
+model AppSetting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}
+
+model ControlLease {
+  key       String   @id
+  holderId  String
+  expiresAt DateTime
+  updatedAt DateTime @updatedAt
+
+  @@index([expiresAt])
+}
+
+enum AlertLevel {
+  CRITICAL
+  WARNING
+  INFO
+  OK
+}
+
+enum TaskStatus {
+  OPEN
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+model Scan {
+  id                   String     @id @default(cuid())
+  siteId               String
+  site                 Site       @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  scanType             ScanType   @default(CRAWL)
+  textSearchQuery      String?
+  // Empty for nonregional scans and scans queued before province selection.
+  scanProvinces        String[]   @default([]) @db.VarChar(2)
+  status               ScanStatus @default(QUEUED)
+  startedAt            DateTime   @default(now())
+  // touched by every progress write — the worker watchdog uses this to spot stalled scans
+  updatedAt            DateTime   @default(now()) @updatedAt
+  finishedAt           DateTime?
+  // Persisted orchestration lease. STARTING/FINALIZING work may be safely reclaimed after
+  // this expires; the token prevents a stale delivery from committing after reclamation.
+  attemptToken         String?
+  leaseExpiresAt       DateTime?
+  // progress counters (updated live)
+  pagesFound           Int        @default(0)
+  pagesCrawled         Int        @default(0)
+  pagesAudited         Int        @default(0)
+  // Link-check totals. Only broken links get Link rows (healthy links were ~97% of Link
+  // storage); totals live here instead. Incremented live per page for progress, then
+  // overwritten at finalize with exact sums of the idempotent per-page Page counters, so
+  // watchdog page re-runs can only inflate them transiently. Scans from before this change
+  // have 0 here but full Link rows — readers fall back to counting rows when linksChecked is 0.
+  linksChecked         Int        @default(0)
+  linksDiscovered      Int        @default(0)
+  linksBroken          Int        @default(0)
+  linksInternalChecked Int        @default(0)
+  // derived summary (written at finalize for fast dashboard reads)
+  scoreOverall         Int?
+  scoreLinks           Int?
+  scoreSeo             Int?
+  scoreA11y            Int?
+  scoreQa              Int?
+  scoreSecurity        Int?
+  issueCounts          Json?
+  sourceScanId         String?
+  scoreVersion         Int?
+  categoryCoverage     Json?
+  categoryProvenance   Json?
+  // Standalone performance diagnostics have a hard one-page ceiling and source crawl inventory.
+  auditPageLimit       Int?
+  // UTC identity of the cron occurrence that created this scan. The unique constraint makes
+  // catch-up idempotent across leader failover and worker restarts.
+  scheduledFor         DateTime?
+
+  textSearchMatches TextSearchMatch[]
+  pages    Page[]
+  findings Finding[]
+  links    Link[]
+
+  @@unique([siteId, scanType, scheduledFor])
+  @@index([siteId, startedAt])
+  @@index([siteId, scanType, startedAt])
+  @@index([status, updatedAt])
+  @@index([status, leaseExpiresAt])
+  @@index([status, scanType, startedAt, id])
+  @@index([siteId, status, scanType, finishedAt])
+}
+
+model Page {
+  textMatchCount Int?
+  textMatchExcerpts Json?
+  id                    String     @id @default(cuid())
+  scanId                String
+  scan                  Scan       @relation(fields: [scanId], references: [id], onDelete: Cascade)
+  url                   String
+  // SHA-256 of the crawler-normalized URL. New rows use this bounded identity instead of
+  // indexing arbitrarily large URL text; nullable preserves immutable historical rows.
+  urlHash               String?    @db.VarChar(64)
+  requestedProvince     String?
+  province              String?
+  language              String?
+  status                PageStatus @default(PENDING)
+  httpStatus            Int?
+  depth                 Int        @default(0)
+  audited               Boolean    @default(false)
+  // fast-tier extracted metadata
+  title                 String?
+  metaDescription       String?
+  h1Count               Int?
+  // standalone Lighthouse diagnostic data
+  perfScore             Int?
+  metrics               Json? // { lcp, cls, tbt, fcp, speedIndex, auditError? }
+  fetchError            String?
+  performanceAuditError String?
+  // Per-page link-check totals, written once in the page's final status update (so a watchdog
+  // re-run simply overwrites them). Finalize sums these into the exact Scan counters.
+  linksChecked          Int        @default(0)
+  linksBroken           Int        @default(0)
+  linksInternalChecked  Int        @default(0)
+  // Exact extraction/check coverage. linksDiscovered may exceed linksChecked when the
+  // configured per-page durable-work ceiling truncates targets.
+  linksDiscovered       Int        @default(0)
+  fetchedAt             DateTime?
+  // touched on every state change — the worker watchdog uses this to reclaim wedged pages
+  updatedAt             DateTime   @default(now()) @updatedAt
+  // Per-delivery ownership for crawl/audit work. Outputs may only be committed while this
+  // token is current and the lease has not been replaced by recovery/cancellation.
+  attemptToken          String?
+  leaseExpiresAt        DateTime?
+
+  findings     Finding[]
+  sourcedLinks Link[]
+
+  @@unique([scanId, urlHash])
+  @@index([scanId, status])
+  @@index([scanId, status, depth, id])
+  @@index([status, leaseExpiresAt])
+  @@index([scanId, audited, perfScore, id])
+}
+
+model TextSearchMatch {
+  scanId   String
+  scan     Scan   @relation(fields: [scanId], references: [id], onDelete: Cascade)
+  urlHash  String @db.VarChar(64)
+  /// Empty for nonregional searches and matches recorded before province support.
+  province String @default("") @db.VarChar(2)
+  url      String
+  title    String?
+  count    Int
+  excerpts Json
+
+  @@id([scanId, urlHash, province])
+}
+
+model Link {
+  id           String  @id @default(cuid())
+  scanId       String
+  scan         Scan    @relation(fields: [scanId], references: [id], onDelete: Cascade)
+  sourceUrl    String
+  sourcePageId String?
+  sourcePage   Page?   @relation(fields: [sourcePageId], references: [id], onDelete: Cascade)
+  targetUrl    String
+  isInternal   Boolean
+  httpStatus   Int?
+  broken       Boolean @default(false)
+  error        String?
+
+  @@index([scanId, broken])
+  @@index([sourcePageId])
+  @@index([scanId, broken, id])
+}
+
+model Finding {
+  province        String?
+  language        String?
+  id              String      @id @default(cuid())
+  scanId          String
+  scan            Scan        @relation(fields: [scanId], references: [id], onDelete: Cascade)
+  pageId          String?
+  page            Page?       @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  category        Category
+  severity        Severity
+  code            String
+  message         String
+  evidence        Json?
+  // triage metadata (from the rule registry) — drives the Issues filters
+  conformance     String? // A | AA | AA22 | ARIA | QA | SEO
+  responsibleRole String? // author | developer | designer
+  elementType     String? // images | links | forms | headings | tables | media | aria | scripts | structure | metadata | content
+  fingerprint     String?
+  duplicateOfId   String?
+  affectedProvinces String[] @default([])
+  itemChecks      ItemCheck[]
+
+  @@index([scanId, category, severity])
+  // Required for fast Scan -> Page -> Finding cascades when deleting large sites.
+  @@index([pageId])
+  @@index([scanId, conformance])
+  @@index([scanId, responsibleRole])
+  @@index([scanId, code, id])
+  @@index([scanId, fingerprint])
+  @@index([duplicateOfId])
+}
+
+model ItemCheck {
+  id             String          @id @default(cuid())
+  siteId         String
+  site           Site            @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  findingId      String?
+  finding        Finding?        @relation(fields: [findingId], references: [id], onDelete: SetNull)
+  findingCode    String
+  pageUrl        String
+  taskPageUrl    String?
+  targetUrl      String?
+  status         ItemCheckStatus @default(QUEUED)
+  issuePresent   Boolean?
+  error          String?
+  tasksCompleted Int             @default(0)
+  createdAt      DateTime        @default(now())
+  startedAt      DateTime?
+  finishedAt     DateTime?
+  attemptToken   String?
+  leaseExpiresAt DateTime?
+  attemptCount   Int             @default(0)
+
+  @@index([findingId, createdAt])
+  @@index([status, createdAt])
+  @@index([siteId])
+  @@index([status, leaseExpiresAt])
+}
+
+enum ItemCheckStatus {
+  QUEUED
+  RUNNING
+  COMPLETE
+  FAILED
+}
+
+enum ScanStatus {
+  QUEUED
+  STARTING
+  CRAWLING
+  AUDITING
+  FINALIZING
+  COMPLETE
+  CANCELLED
+  FAILED
+}
+
+enum ScanType {
+  CRAWL
+  PAGE_AUDIT
+  TEXT_SEARCH
+}
+
+enum PageStatus {
+  PENDING
+  CRAWLING
+  AUDITING
+  FETCHED
+  AUDITED
+  ERROR
+  REDIRECTED
+}
+
+enum Category {
+  LINKS
+  SEO
+  PERFORMANCE
+  A11Y
+  QA
+  SECURITY
+}
+
+enum Severity {
+  CRITICAL
+  SERIOUS
+  MODERATE
+  MINOR
+}

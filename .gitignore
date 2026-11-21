@@ -1,0 +1,32 @@
+# dependencies
+/node_modules
+
+# next.js
+/.next/
+/auditly-next-cache/
+/out/
+
+# production
+/build
+
+# env
+.env
+.env.*
+!.env.example
+
+# embedded dev database cluster
+/.pgdata
+
+# misc
+.DS_Store
+*.pem
+*.log
+*.headers
+*headers.txt
+*response*.html
+https___*.html
+npm-debug.log*
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
