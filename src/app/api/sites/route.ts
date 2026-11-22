@@ -24,10 +24,10 @@ export async function POST(req: NextRequest) {
     }
 
     const site = await prisma.site.create({ data: parsed.data });
-    console.log("[api/sites] site created", { siteId: site.id, rootUrl: site.rootUrl });
+    console.log("[api/sites] site created", { siteId: site.id });
     return NextResponse.json({ site }, { status: 201 });
-  } catch (error) {
-    console.error("[api/sites] site creation failed", { error });
+  } catch {
+    console.error("[api/sites] site creation failed");
     return NextResponse.json({ error: "Could not create the site" }, { status: 500 });
   }
 }

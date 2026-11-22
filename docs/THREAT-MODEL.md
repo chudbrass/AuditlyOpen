@@ -6,7 +6,7 @@ Auditly treats every scanned URL and every resource referenced by a scanned page
 
 - `src/lib/network/egressPolicy.ts` is the shared address policy. Production accepts only HTTP(S) URLs without embedded credentials and globally routable unicast addresses. Loopback, private, link-local, carrier-grade NAT, benchmarking, documentation, multicast/reserved IPv4, non-global IPv6, and IPv4-mapped private IPv6 are rejected. If any DNS answer is non-global, the request is rejected.
 - Fast-tier Undici requests resolve each redirect hop, validate the complete answer set, and create a dispatcher whose `lookup` callback returns only the selected vetted address. The socket therefore cannot repeat DNS resolution after validation. This covers pages, robots, sitemaps, link checks, and item rechecks because they all use `fetchPage.ts`.
-- Chromium is launched only through Auditly's loopback egress proxy. The proxy validates and pins the upstream address for HTTP and HTTPS CONNECT traffic, so top-level redirects and browser subresources share the same boundary. Lighthouse attaches to that proxied browser; its runner refuses standalone execution without the enforcement marker.
+- Chromium uses Auditly's loopback egress proxy, which validates and pins the upstream address for HTTP and HTTPS CONNECT traffic. Local development launches Chromium with its process sandbox and a limited environment. Production requires an isolated browser service with its own OS account and firewall rules that allow its outbound connections only to the proxy. Lighthouse attaches to the same browser over CDP. See the [deployment guide](DEPLOYMENT.md).
 - TLS certificate verification is always enabled. Auditly no longer retries with `rejectUnauthorized: false`.
 - Response bodies have transfer bounds, and sitemap decompression has a separate 10 MiB output bound. Crawl include/exclude patterns are literal wildcard matches (`*`) rather than regular expressions.
 
@@ -17,7 +17,7 @@ Auditly treats every scanned URL and every resource referenced by a scanned page
 ## Residual assumptions
 
 - The worker host and Node/Chromium processes are trusted and not already compromised.
-- Operating-system firewall/container egress rules remain recommended as defense in depth.
+- The production boundary depends on the deployment's firewall and filesystem permissions. Verify that the browser account cannot access deployment secrets, the dashboard, or the database.
 - Public services that themselves proxy internal data are outside an IP egress boundary; application-level credentials must not be exposed to scanned pages.
 - DNS and connections can still fail or be denied (fail closed); availability is secondary to preventing internal access.
 

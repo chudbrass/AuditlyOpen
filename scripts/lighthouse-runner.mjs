@@ -44,10 +44,11 @@ async function main() {
     screenEmulation: { mobile: true, width: 412, height: 823, deviceScaleFactor: 1.75, disabled: false },
   });
 
-  const timeout = new Promise((_, reject) =>
-    setTimeout(() => reject(new Error(`Lighthouse timed out after ${timeoutMs}ms`)), timeoutMs)
-  );
-  const result = await Promise.race([run, timeout]);
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`Lighthouse timed out after ${timeoutMs}ms`)), timeoutMs);
+  });
+  const result = await Promise.race([run, timeout]).finally(() => clearTimeout(timer));
 
   if (!result) {
     emit({ perfScore: null, metrics: empty, error: "Lighthouse returned no result" });

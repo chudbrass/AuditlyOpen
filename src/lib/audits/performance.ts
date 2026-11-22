@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { getBrowserCdpPort } from "./browser";
+import { browserChildEnvironment, getBrowserCdpPort } from "./browser";
 
 export interface PerfMetrics {
   lcp: number | null; // ms
@@ -68,7 +68,8 @@ function runLighthouseInChild(url: string, cdpPort: number, signal?: AbortSignal
     const child = spawn(process.execPath, [RUNNER_PATH, url, String(cdpPort), String(AUDIT_TIMEOUT_MS)], {
       cwd: process.cwd(),
       env: {
-        ...process.env,
+        ...browserChildEnvironment(),
+        NODE_ENV: process.env.NODE_ENV ?? "development",
         NODE_OPTIONS: withChildHeapLimit(process.env.NODE_OPTIONS),
         AUDITLY_BROWSER_EGRESS_PROXY_ENFORCED: "true",
       },

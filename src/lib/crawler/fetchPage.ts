@@ -3,11 +3,11 @@ import { getCACertificates } from "node:tls";
 import { sleep } from "./rateLimit";
 import { isRequestUrlAllowed, isSameSiteDomain } from "./urlFilters";
 import { assertHttpUrl, createPinnedLookup, resolveVettedAddress } from "@/lib/network/egressPolicy";
-import { getGlobalSettings } from "@/lib/settings";
 
 export const USER_AGENT = "AuditlyBot/1.0 (+https://your-host/about)";
 
 async function currentUserAgent(): Promise<string> {
+  const { getGlobalSettings } = await import("@/lib/settings");
   return (await getGlobalSettings()).userAgent;
 }
 

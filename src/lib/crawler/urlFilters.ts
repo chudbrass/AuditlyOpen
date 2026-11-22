@@ -4,6 +4,7 @@ export function normalizeUrl(rawUrl: string, base: string): string | null {
   try {
     const url = new URL(rawUrl, base);
     if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    if (url.username || url.password) return null;
     url.hash = "";
     return url.toString();
   } catch {
@@ -20,6 +21,7 @@ export function isRequestUrlAllowed(url: string): boolean {
   try {
     const parsed = new URL(url);
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
+    if (parsed.username || parsed.password) return false;
     if (allowsPrivateNetwork()) return true;
     return !isPrivateHostname(normalizeHostname(parsed.hostname));
   } catch {

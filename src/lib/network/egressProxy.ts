@@ -4,7 +4,7 @@ import { resolveVettedAddress, assertHttpUrl } from "./egressPolicy";
 
 export interface EgressProxy { port: number; close(): Promise<void> }
 
-export async function startEgressProxy(): Promise<EgressProxy> {
+export async function startEgressProxy(port = 0): Promise<EgressProxy> {
   const server = http.createServer(async (request, response) => {
     try {
       const target = assertHttpUrl(request.url ?? "");
@@ -53,7 +53,7 @@ export async function startEgressProxy(): Promise<EgressProxy> {
 
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
-    server.listen(0, "127.0.0.1", resolve);
+    server.listen(port, "127.0.0.1", resolve);
   });
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("Failed to bind egress proxy");

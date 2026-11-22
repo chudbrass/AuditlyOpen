@@ -43,9 +43,7 @@ async function main() {
     // already exists — fine
   }
 
-  console.log(
-    `PostgreSQL ready on port ${PORT} — DATABASE_URL=postgresql://${USER}:${PASSWORD}@localhost:${PORT}/${DATABASE}`
-  );
+  console.log(`PostgreSQL ready on port ${PORT} (database "${DATABASE}")`);
   console.log("Press Ctrl+C to stop.");
 
   const stop = async () => {
