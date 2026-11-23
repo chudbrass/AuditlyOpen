@@ -86,8 +86,9 @@ Cancellation: `scan.cancel` sets a flag; workers check it and stop enqueuing/pro
 - User-Agent: `AuditlyBot/1.0 (+https://your-host/about)`.
 
 Performance diagnostics persist their source crawl and selected page. Audit pages use tokenized
-leases; stale leases return to the durable queue. Each worker reserves a
-dynamic CDP port, so multiple audit workers cannot collide on port 9222.
+leases; stale leases return to the durable queue. The development worker reserves a dynamic CDP
+port. In production, the optional isolated Chromium service and the worker use the dedicated
+loopback ports in the [server deployment guide](DEPLOYMENT.md#4-enable-browser-audits).
 
 Link extraction records exact `linksDiscovered` and `linksChecked` per page. Work is deliberately
 bounded to 200 unique eligible targets per source page; `linksChecked / linksDiscovered` exposes
